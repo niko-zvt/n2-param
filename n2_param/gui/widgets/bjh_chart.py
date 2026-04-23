@@ -16,6 +16,7 @@ from n2_param.gui.chart_config import (
     YBJH_DEFAULT,
 )
 from n2_param.gui.chart_series import bjh_series
+from n2_param.gui.mpl_util import bind_figure_size_to_canvas
 from n2_param.gui.file_session import OpenFileSession
 from n2_param.i18n.translator import Translator
 
@@ -48,8 +49,9 @@ class BjhChartWidget(QWidget):
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._toolbar = NavigationToolbar2QT(self._canvas, self)
         layout.addWidget(self._toolbar)
-        layout.addWidget(self._canvas)
+        layout.addWidget(self._canvas, stretch=1)
         self._axes = self._figure.add_subplot(111)
+        bind_figure_size_to_canvas(self._figure, self._canvas)
 
         session.parsed_changed.connect(self._render)
         translator.locale_changed.connect(self._render)

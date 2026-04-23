@@ -7,13 +7,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QByteArray, QSettings, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QTabBar,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -24,6 +25,7 @@ from n2_param.core.parsing.asap_report_parser import AsapReportParser
 from n2_param.gui.dialogs.about_dialog import AboutDialog
 from n2_param.gui.file_session import OpenFileSession
 from n2_param.gui.file_tab_page import FileTabPage
+from n2_param.gui.summary_tab_page import SummaryTabPage
 from n2_param.i18n.translator import Translator
 from n2_param.io.text_files import read_text_file_best_effort
 
@@ -34,6 +36,7 @@ class MainWindow(QMainWindow):
     """Hosts multi-file tabs and wires global actions."""
 
     _SETTING_LAST_OPEN_DIR: str = "file/last_open_directory"
+    _SETTING_WINDOW_GEOMETRY: str = "window/geometry"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create menus, central tabs, and localization bindings."""
@@ -41,6 +44,9 @@ class MainWindow(QMainWindow):
         self._translator = Translator(self)
         self._parser = AsapReportParser()
         self._open_paths: set[Path] = set()
+        self._summary_page: SummaryTabPage | None = None
+        self._open_batch_last_path: Path | None = None
+        self._open_batch_multi: bool = False
         self._language_actions: dict[str, QAction] = {}
 
         central = QWidget(self)
@@ -56,6 +62,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self._build_menu()
         self._build_toolbar()
+        self._apply_window_geometry()
         self._translator.locale_changed.connect(self._on_locale_changed)
         self._on_locale_changed(self._translator.current_language)
 
@@ -151,6 +158,100 @@ class MainWindow(QMainWindow):
         store.setValue(self._SETTING_LAST_OPEN_DIR, str(resolved))
         store.sync()
 
+    def _apply_window_geometry(self) -> None:
+        """
+        Restore a saved main-window size, or use 1024x768 on first run.
+
+        Geometry is read from the same QSettings group as the rest of the app.
+        """
+        store = QSettings()
+        store.sync()
+        raw: object = store.value(self._SETTING_WINDOW_GEOMETRY, b"")
+        geometry = QByteArray()
+        if isinstance(raw, QByteArray):
+            geometry = raw
+        elif isinstance(raw, (bytes, bytearray)):
+            geometry = QByteArray(bytes(raw))
+        if geometry.isEmpty() or not self.restoreGeometry(geometry):
+            self.resize(1024, 768)
+
+    def _outer_tab_session(self, w: QWidget | None) -> OpenFileSession | None:
+        """
+        Return the per-file session for an outer tab page.
+
+        Uses ``OpenFileSession`` on the widget instead of ``isinstance(..., FileTabPage)``
+        so a duplicate import of ``file_tab_page`` cannot hide real file tabs.
+        """
+        if w is None or isinstance(w, SummaryTabPage):
+            return None
+        session = getattr(w, "session", None)
+        if session is not None and isinstance(session, OpenFileSession):
+            return session
+        return None
+
+    def _list_sessions_from_file_tabs(self) -> list[OpenFileSession]:
+        """Return opened file sessions in outer tab order (Summary excluded)."""
+        out: list[OpenFileSession] = []
+        for i in range(self._file_tabs.count()):
+            s = self._outer_tab_session(self._file_tabs.widget(i))
+            if s is not None:
+                out.append(s)
+        return out
+
+    def _sync_summary_tab(self) -> None:
+        """
+        Create, update, or remove the Summary tab so it always mirrors all file tabs.
+        """
+        if self._summary_page is not None and self._file_tabs.indexOf(self._summary_page) < 0:
+            self._summary_page = None
+        sessions = self._list_sessions_from_file_tabs()
+        if not sessions:
+            if self._summary_page is not None:
+                to_remove: SummaryTabPage = self._summary_page
+                for idx in range(self._file_tabs.count() - 1, -1, -1):
+                    w = self._file_tabs.widget(idx)
+                    if w is to_remove:
+                        self._file_tabs.removeTab(idx)
+                        to_remove.deleteLater()
+                self._summary_page = None
+            return
+        if self._summary_page is None:
+            self._summary_page = SummaryTabPage(self._translator, parent=self._file_tabs)
+            self._file_tabs.insertTab(0, self._summary_page, self._translator.tr_key("tab.summary"))
+        self._summary_page.set_sessions(sessions)
+        self._ensure_summary_is_first()
+        self._summary_tab_bring_title_in_sync()
+        self._apply_summary_tab_no_close_button()
+
+    def _ensure_summary_is_first(self) -> None:
+        """Move the Summary tab to the first (left) position, before any file tabs."""
+        if self._summary_page is None:
+            return
+        at = self._file_tabs.indexOf(self._summary_page)
+        if at < 0 or at == 0:
+            return
+        label = self._file_tabs.tabText(at)
+        self._file_tabs.removeTab(at)
+        self._file_tabs.insertTab(0, self._summary_page, label)
+
+    def _summary_tab_bring_title_in_sync(self) -> None:
+        """Keep the outer Summary label translated."""
+        if self._summary_page is None:
+            return
+        pos = self._file_tabs.indexOf(self._summary_page)
+        if pos < 0:
+            return
+        self._file_tabs.setTabText(pos, self._translator.tr_key("tab.summary"))
+
+    def _apply_summary_tab_no_close_button(self) -> None:
+        """The Summary tab must not be closable like per-file tabs."""
+        bar = self._file_tabs.tabBar()
+        for i in range(self._file_tabs.count()):
+            w = self._file_tabs.widget(i)
+            if isinstance(w, SummaryTabPage):
+                bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
+                break
+
     def _refresh_menu_texts(self) -> None:
         """Apply localized captions to menus and actions."""
         tr = self._translator.tr_key
@@ -167,6 +268,7 @@ class MainWindow(QMainWindow):
         _ = language
         self.setWindowTitle(self._translator.tr_key("window.title"))
         self._refresh_menu_texts()
+        self._summary_tab_bring_title_in_sync()
         for lang, action in self._language_actions.items():
             action.setChecked(lang == self._translator.current_language)
 
@@ -205,6 +307,9 @@ class MainWindow(QMainWindow):
 
     def _open_resolved_paths(self, paths: list[Path]) -> None:
         """Create sessions and tabs for unique paths."""
+        if not paths:
+            return
+        self._open_batch_last_path = None
         for path in paths:
             if path in self._open_paths:
                 idx = self._find_tab_index_for_path(path)
@@ -222,16 +327,41 @@ class MainWindow(QMainWindow):
             session = OpenFileSession(path, text, encoding, parsed, parent=self)
             page = FileTabPage(session, self._translator, parent=self._file_tabs)
             title = session.display_title()
-            idx = self._file_tabs.addTab(page, title)
+            self._file_tabs.addTab(page, title)
             self._open_paths.add(path)
+            self._open_batch_last_path = path
             session.parsed_changed.connect(lambda s=session: self._update_tab_title(s))
-            self._file_tabs.setCurrentIndex(idx)
+        self._open_batch_multi = len(paths) > 1
+        QTimer.singleShot(0, self._complete_open_resolved_batch)
+
+    def _complete_open_resolved_batch(self) -> None:
+        """
+        Apply Summary and focus after the event loop: sync visibility of tabs and
+        (when the batch had several paths) select the Summary so it is not
+        scrolled off the tab bar when the last file is selected.
+        """
+        if self._summary_page is not None and self._file_tabs.indexOf(self._summary_page) < 0:
+            self._summary_page = None
+        self._sync_summary_tab()
+        n_tabs = self._file_tabs.count()
+        if n_tabs < 1:
+            self._open_batch_last_path = None
+            self._open_batch_multi = False
+            return
+        if self._open_batch_multi:
+            self._file_tabs.setCurrentIndex(0)
+        elif self._open_batch_last_path is not None:
+            tab_idx = self._find_tab_index_for_path(self._open_batch_last_path)
+            if tab_idx is not None:
+                self._file_tabs.setCurrentIndex(tab_idx)
+        self._open_batch_last_path = None
+        self._open_batch_multi = False
 
     def _find_tab_index_for_path(self, path: Path) -> int | None:
-        """Locate an existing tab by filesystem path."""
+        """Locate an existing file tab (not Summary) by filesystem path."""
         for idx in range(self._file_tabs.count()):
-            widget = self._file_tabs.widget(idx)
-            if isinstance(widget, FileTabPage) and widget.session.path == path:
+            s = self._outer_tab_session(self._file_tabs.widget(idx))
+            if s is not None and s.path == path:
                 return idx
         return None
 
@@ -245,17 +375,21 @@ class MainWindow(QMainWindow):
     def _find_tab_index_for_session(self, session: OpenFileSession) -> int | None:
         """Locate the tab hosting a session instance."""
         for idx in range(self._file_tabs.count()):
-            widget = self._file_tabs.widget(idx)
-            if isinstance(widget, FileTabPage) and widget.session is session:
+            s = self._outer_tab_session(self._file_tabs.widget(idx))
+            if s is not None and s is session:
                 return idx
         return None
 
     def _close_tab(self, index: int) -> None:
         """Remove a tab and forget its path guard."""
         widget = self._file_tabs.widget(index)
-        if isinstance(widget, FileTabPage):
-            self._open_paths.discard(widget.session.path)
+        if isinstance(widget, SummaryTabPage):
+            return
+        s = self._outer_tab_session(widget)
+        if s is not None:
+            self._open_paths.discard(s.path)
         self._file_tabs.removeTab(index)
+        self._sync_summary_tab()
 
     def _show_about(self) -> None:
         """Present developer information."""
@@ -283,5 +417,8 @@ class MainWindow(QMainWindow):
             super().dropEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Allow normal shutdown."""
+        """Persist main-window geometry before shutdown."""
+        store = QSettings()
+        store.setValue(self._SETTING_WINDOW_GEOMETRY, self.saveGeometry())
+        store.sync()
         super().closeEvent(event)

@@ -1,4 +1,6 @@
 key,en,ru,cn
+tab.summary,Summary,Сводка,汇总
+summary.file_list_title,Files,Файлы,文件
 menu.file,File,Файл,文件
 menu.file.open,Open...,Открыть...,打开…
 menu.file.exit,Exit,Выход,退出
