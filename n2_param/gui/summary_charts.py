@@ -1,7 +1,9 @@
 """
 Multi-series matplotlib views that overlay all open ASAP reports in the Summary tab.
 
-Each open file is one line; the parent view toggles line visibility with checkboxes.
+Each file maps to a persistent Line2D: visibility and color are updated without clearing axes
+so the zoom and pan (axis limits) stay in place; full rebuild only when data or the file set
+changes, or on locale change for the chart chrome.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from pathlib import Path
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from n2_param.gui.chart_config import BJHSeries, IsothermSeries, XBJH_DEFAULT, XISOTHERM_DEFAULT, YBJH_DEFAULT, YISOTHERM_DEFAULT
@@ -22,7 +25,10 @@ from n2_param.i18n.translator import Translator
 
 logger = logging.getLogger(__name__)
 
-_MULTI_PLOT_COLORS: tuple[str, ...] = (
+_DEFAULT_COLOR: str = "#1f77b4"
+
+# Default cycle for new files in the Summary list (must stay in sync with the UI palette).
+DEFAULT_CURVE_COLORS: tuple[str, ...] = (
     "#1f77b4",
     "#ff7f0e",
     "#2ca02c",
@@ -36,12 +42,20 @@ _MULTI_PLOT_COLORS: tuple[str, ...] = (
 )
 
 
+def _default_color() -> str:
+    """Return a non-empty line color for missing callbacks."""
+    return _DEFAULT_COLOR
+
+
+_LINE_W: float = 1.2
+
+
 class MultiIsothermChartWidget(QWidget):
-    """Isotherm chart showing one curve per open file."""
+    """Isotherm chart showing one line per file; visibility and color are incremental updates."""
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         """
-        Build a combined isotherm plot shell.
+        Build the isotherm shell, axes, and resize binding.
 
         Args:
             translator: Localized axis and title strings.
@@ -52,7 +66,9 @@ class MultiIsothermChartWidget(QWidget):
         self._x_field: IsothermSeries = XISOTHERM_DEFAULT
         self._y_field: IsothermSeries = YISOTHERM_DEFAULT
         self._sessions: tuple[OpenFileSession, ...] = ()
+        self._lines: dict[Path, Line2D] = {}
         self._visible: Callable[[Path], bool] = lambda _p: True
+        self._get_color: Callable[[Path], str] = lambda _p: _default_color()
 
         layout = QVBoxLayout(self)
         self._figure = Figure(figsize=(5.5, 4.0), layout="tight")
@@ -63,44 +79,64 @@ class MultiIsothermChartWidget(QWidget):
         self._axes = self._figure.add_subplot(111)
         bind_figure_size_to_canvas(self._figure, self._canvas)
 
-        translator.locale_changed.connect(self._render)
-        self._render()
+        translator.locale_changed.connect(self._rebuild_plots)
+        self._rebuild_plots()
 
-    def set_sessions(self, sessions: Sequence[OpenFileSession], is_visible: Callable[[Path], bool]) -> None:
+    def set_sessions(
+        self,
+        sessions: Sequence[OpenFileSession],
+        is_visible: Callable[[Path], bool],
+        get_color: Callable[[Path], str],
+    ) -> None:
         """
-        Replace the session list and visibility predicate, then re-subscribe to updates.
+        Replace the session set, wire parsed_changed, and rebuild all lines.
 
         Args:
-            sessions: All open per-file sessions to plot.
-            is_visible: For each file path, whether the curve should be drawn and exported.
+            sessions: All open per-file sessions.
+            is_visible: Per-path show/hide in the multi plot.
+            get_color: Per-path line color in matplotlib format (e.g. ``#aabbcc``).
         """
         if not callable(is_visible):
             raise TypeError("is_visible must be a callable")
+        if not callable(get_color):
+            raise TypeError("get_color must be a callable")
         for previous in self._sessions:
             try:
-                previous.parsed_changed.disconnect(self._render)
+                previous.parsed_changed.disconnect(self._rebuild_plots)
             except TypeError:
-                logger.debug("Isotherm: parsed_changed already disconnected for %s", previous.path)
+                logger.debug("Isotherm: parsed_changed already detached for %s", previous.path)
         self._sessions = tuple(sessions)
         self._visible = is_visible
+        self._get_color = get_color
         for s in self._sessions:
-            s.parsed_changed.connect(self._render)
-        self._render()
+            s.parsed_changed.connect(self._rebuild_plots)
+        self._rebuild_plots()
 
     def set_path_visibility(self, is_visible: Callable[[Path], bool]) -> None:
-        """
-        Update the visibility function without changing the session set.
-
-        Args:
-            is_visible: Predicate for drawing each path.
-        """
+        """Point the visibility callback at a new function and update lines without full redraw."""
         if not callable(is_visible):
             raise TypeError("is_visible must be a callable")
         self._visible = is_visible
-        self._render()
+        self.apply_appearance()
+
+    def apply_appearance(self) -> None:
+        """Update visibility and colors only, preserving the current x/y limits and pan/zoom state."""
+        if not self._lines:
+            return
+        x0, x1 = self._axes.get_xlim()
+        y0, y1 = self._axes.get_ylim()
+        self._axes.set_autoscalex_on(False)
+        self._axes.set_autoscaley_on(False)
+        for p, line in self._lines.items():
+            line.set_visible(self._visible(p))
+            c = _safe_color(self._get_color, p)
+            line.set_color(c)
+        self._axes.set_xlim(x0, x1)
+        self._axes.set_ylim(y0, y1)
+        self._canvas.draw_idle()
 
     def _axis_label(self, field: IsothermSeries) -> str:
-        """Translate isotherm axis title for the selected field."""
+        """Translate isotherm axis label for a column."""
         mapping: dict[IsothermSeries, str] = {
             "relative_pressure": "axis.relative_pressure",
             "pressure_mmhg": "axis.pressure_mmhg",
@@ -108,18 +144,17 @@ class MultiIsothermChartWidget(QWidget):
         }
         return self._translator.tr_key(mapping[field])
 
-    def _render(self) -> None:
-        """Plot one line per session when the path is selected as visible."""
+    def _rebuild_plots(self) -> None:
+        """Recompute all series: clears axes, used for data changes and after locale change."""
         self._axes.clear()
+        self._lines.clear()
         title = self._translator.tr_key("chart.isotherm.title")
         self._axes.set_title(title)
         if not self._sessions:
             self._canvas.draw_idle()
             return
-        for idx, session in enumerate(self._sessions):
+        for _idx, session in enumerate(self._sessions):
             path = session.path
-            if not self._visible(path):
-                continue
             report = session.parsed
             rows = report.analysis_log
             if not rows:
@@ -130,20 +165,23 @@ class MultiIsothermChartWidget(QWidget):
             except ValueError:
                 logger.exception("Multi isotherm: series extraction failed for %s", path)
                 continue
-            color = _MULTI_PLOT_COLORS[idx % len(_MULTI_PLOT_COLORS)]
-            self._axes.plot(xs, ys, color=color, linewidth=1.2)
+            c = _safe_color(self._get_color, path)
+            (line,) = self._axes.plot(xs, ys, color=c, linewidth=_LINE_W, visible=self._visible(path))
+            self._lines[path] = line
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
         self._axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+        self._axes.set_autoscalex_on(True)
+        self._axes.set_autoscaley_on(True)
         self._canvas.draw_idle()
 
 
 class MultiBjhChartWidget(QWidget):
-    """BJH desorption distribution plot with one curve per open file."""
+    """BJH multi-file chart with incremental appearance updates."""
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         """
-        Build a combined BJH plot shell.
+        Build the BJH shell, axes, and resize binding.
 
         Args:
             translator: Localized axis and title strings.
@@ -154,7 +192,9 @@ class MultiBjhChartWidget(QWidget):
         self._x_field: BJHSeries = XBJH_DEFAULT
         self._y_field: BJHSeries = YBJH_DEFAULT
         self._sessions: tuple[OpenFileSession, ...] = ()
+        self._lines: dict[Path, Line2D] = {}
         self._visible: Callable[[Path], bool] = lambda _p: True
+        self._get_color: Callable[[Path], str] = lambda _p: _default_color()
 
         layout = QVBoxLayout(self)
         self._figure = Figure(figsize=(5.5, 4.0), layout="tight")
@@ -165,41 +205,61 @@ class MultiBjhChartWidget(QWidget):
         self._axes = self._figure.add_subplot(111)
         bind_figure_size_to_canvas(self._figure, self._canvas)
 
-        translator.locale_changed.connect(self._render)
-        self._render()
+        translator.locale_changed.connect(self._rebuild_plots)
+        self._rebuild_plots()
 
-    def set_sessions(self, sessions: Sequence[OpenFileSession], is_visible: Callable[[Path], bool]) -> None:
+    def set_sessions(
+        self,
+        sessions: Sequence[OpenFileSession],
+        is_visible: Callable[[Path], bool],
+        get_color: Callable[[Path], str],
+    ) -> None:
         """
-        Replace the session list and re-subscribe to BJH data updates.
+        Replace the session set, wire updates, and rebuild BJH lines.
 
         Args:
-            sessions: All open per-file sessions to plot.
-            is_visible: Predicate to draw a given path.
+            sessions: All open per-file sessions.
+            is_visible: Per-path show/hide.
+            get_color: Per-path line color.
         """
         if not callable(is_visible):
             raise TypeError("is_visible must be a callable")
+        if not callable(get_color):
+            raise TypeError("get_color must be a callable")
         for previous in self._sessions:
             try:
-                previous.parsed_changed.disconnect(self._render)
+                previous.parsed_changed.disconnect(self._rebuild_plots)
             except TypeError:
                 logger.debug("BJH: parsed_changed already disconnected for %s", previous.path)
         self._sessions = tuple(sessions)
         self._visible = is_visible
+        self._get_color = get_color
         for s in self._sessions:
-            s.parsed_changed.connect(self._render)
-        self._render()
+            s.parsed_changed.connect(self._rebuild_plots)
+        self._rebuild_plots()
 
     def set_path_visibility(self, is_visible: Callable[[Path], bool]) -> None:
-        """
-        Update the visibility function without re-binding session signals.
-
-        Args:
-            is_visible: Predicate for drawing each path.
-        """
+        """Update visibility only without rebuilding geometry."""
         if not callable(is_visible):
             raise TypeError("is_visible must be a callable")
         self._visible = is_visible
-        self._render()
+        self.apply_appearance()
+
+    def apply_appearance(self) -> None:
+        """Update visibility and colors, preserving the current view limits."""
+        if not self._lines:
+            return
+        x0, x1 = self._axes.get_xlim()
+        y0, y1 = self._axes.get_ylim()
+        self._axes.set_autoscalex_on(False)
+        self._axes.set_autoscaley_on(False)
+        for p, line in self._lines.items():
+            line.set_visible(self._visible(p))
+            c = _safe_color(self._get_color, p)
+            line.set_color(c)
+        self._axes.set_xlim(x0, x1)
+        self._axes.set_ylim(y0, y1)
+        self._canvas.draw_idle()
 
     def _axis_label(self, field: BJHSeries) -> str:
         """Translate BJH axis label for a column."""
@@ -212,18 +272,17 @@ class MultiBjhChartWidget(QWidget):
         }
         return self._translator.tr_key(mapping[field])
 
-    def _render(self) -> None:
-        """Plot BJH for each visible file."""
+    def _rebuild_plots(self) -> None:
+        """Clear and repopulate BJH lines; restores autoscaling for new data."""
         self._axes.clear()
+        self._lines.clear()
         title = self._translator.tr_key("chart.bjh.title")
         self._axes.set_title(title)
         if not self._sessions:
             self._canvas.draw_idle()
             return
-        for idx, session in enumerate(self._sessions):
+        for _idx, session in enumerate(self._sessions):
             path = session.path
-            if not self._visible(path):
-                continue
             report = session.parsed
             rows = report.bjh_desorption_rows
             if not rows:
@@ -234,14 +293,34 @@ class MultiBjhChartWidget(QWidget):
             except ValueError:
                 logger.exception("Multi BJH: series extraction failed for %s", path)
                 continue
-            color = _MULTI_PLOT_COLORS[idx % len(_MULTI_PLOT_COLORS)]
-            self._axes.plot(
+            c = _safe_color(self._get_color, path)
+            (line,) = self._axes.plot(
                 xs,
                 ys,
-                color=color,
-                linewidth=1.2,
+                color=c,
+                linewidth=_LINE_W,
+                visible=self._visible(path),
             )
+            self._lines[path] = line
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
         self._axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+        self._axes.set_autoscalex_on(True)
+        self._axes.set_autoscaley_on(True)
         self._canvas.draw_idle()
+
+
+def _safe_color(get_color: Callable[[Path], str], path: Path) -> str:
+    """Call ``get_color`` and validate; fall back to a default on errors."""
+    if not isinstance(path, Path):
+        raise TypeError("path must be pathlib.Path")
+    if not callable(get_color):
+        raise TypeError("get_color must be a callable")
+    try:
+        raw = get_color(path)
+    except Exception as exc:
+        logger.debug("get_color failed for %s: %s", path, exc)
+        return _default_color()
+    if not isinstance(raw, str) or not raw.strip():
+        return _default_color()
+    return raw.strip()
