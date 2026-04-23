@@ -117,37 +117,22 @@ class AsapReportParser:
                 warnings.append("analysis_log_header_not_found")
         return rows
 
-    def _parse_bjh_desorption_distribution(
-        self,
-        text: str,
-        warnings: list[str],
-    ) -> list[BJHDesorptionRow]:
-        """Parse BJH DESORPTION PORE DISTRIBUTION REPORT tabular data."""
-        marker = "BJH DESORPTION PORE DISTRIBUTION REPORT"
-        idx = text.find(marker)
-        if idx < 0:
-            warnings.append("missing_bjh_desorption_distribution")
-            return []
+    def _parse_bjh_data_rows_in_block(self, block: str) -> list[BJHDesorptionRow]:
+        """
+        Read numeric BJH desorption table rows from one text block (header already skipped).
 
-        section = text[idx:]
-        end_markers = (
-            "\f",
-            "SUMMARY REPORT",
-            "BJH ADSORPTION PORE DISTRIBUTION REPORT",
-        )
-        cut = len(section)
-        for em in end_markers:
-            pos = section.find(em, len(marker))
-            if pos > 0:
-                cut = min(cut, pos)
-        section = section[:cut]
+        Args:
+            block: A slice of the report that starts with the BJH distribution marker line.
 
+        Returns:
+            One ``BJHDesorptionRow`` for each data line.
+        """
         rows: list[BJHDesorptionRow] = []
-        for raw_line in section.splitlines():
+        for raw_line in block.splitlines():
             line = raw_line.strip()
             if not line:
                 continue
-            if "PORE DIAMETER" in line or "RANGE" in line and "DIAMETER" in line:
+            if "PORE DIAMETER" in line or ("RANGE" in line and "DIAMETER" in line):
                 continue
             if "(A )" in line or "(cc/g)" in line or "(sq." in line:
                 continue
@@ -167,10 +152,47 @@ class AsapReportParser:
                     cumulative_pore_area_sq_m_g=ca,
                 )
             )
-
-        if not rows:
-            warnings.append("bjh_desorption_distribution_has_no_rows")
         return rows
+
+    def _parse_bjh_desorption_distribution(
+        self,
+        text: str,
+        warnings: list[str],
+    ) -> list[BJHDesorptionRow]:
+        """
+        Parse BJH DESORPTION PORE DISTRIBUTION REPORT tabular data.
+
+        Continuations on later pages (repeated report title) are concatenated, like
+        the merged ANALYSIS LOG.
+        """
+        marker = "BJH DESORPTION PORE DISTRIBUTION REPORT"
+        block_starts = [m.start() for m in re.finditer(re.escape(marker), text)]
+        if not block_starts:
+            warnings.append("missing_bjh_desorption_distribution")
+            return []
+
+        out: list[BJHDesorptionRow] = []
+        end_of_last_markers: tuple[str, ...] = (
+            "\f",
+            "SUMMARY REPORT",
+            "BJH ADSORPTION PORE DISTRIBUTION REPORT",
+        )
+        mlen = len(marker)
+        for bi, start in enumerate(block_starts):
+            if bi + 1 < len(block_starts):
+                block = text[start : block_starts[bi + 1]]
+            else:
+                rest = text[start:]
+                cut = len(rest)
+                for em in end_of_last_markers:
+                    pos = rest.find(em, mlen)
+                    if pos > 0:
+                        cut = min(cut, pos)
+                block = rest[:cut]
+            out.extend(self._parse_bjh_data_rows_in_block(block))
+        if not out:
+            warnings.append("bjh_desorption_distribution_has_no_rows")
+        return out
 
     def _parse_summary_metrics(self, text: str, warnings: list[str]) -> SummaryMetrics:
         """Extract selected BJH desorption summary lines under SUMMARY REPORT."""

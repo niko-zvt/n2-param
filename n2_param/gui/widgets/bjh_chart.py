@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class BjhChartWidget(QWidget):
-    """Interactive BJH chart with configurable axis mapping hooks."""
+    """BJH (desorption): dV/dD over pore diameter D in nm, from the report table."""
 
     def __init__(self, session: OpenFileSession, translator: Translator, parent: QWidget | None = None) -> None:
         """
@@ -64,15 +64,16 @@ class BjhChartWidget(QWidget):
 
     def _axis_label(self, field: BJHSeries) -> str:
         """Translate axis titles for supported BJH columns."""
-        mapping = {
+        mapping: dict[BJHSeries, str] = {
+            "pore_diameter_avg_nm": "axis.pore_diameter_nm",
+            "dV_dD_cc_g_nm": "axis.dV_dD",
             "average_diameter_a": "axis.avg_diameter",
             "incremental_pore_volume_cc_g": "axis.incr_vol",
             "cumulative_pore_volume_cc_g": "axis.cum_vol",
             "incremental_pore_area_sq_m_g": "axis.incr_area",
             "cumulative_pore_area_sq_m_g": "axis.cum_area",
         }
-        key = mapping[field]
-        return self._translator.tr_key(key)
+        return self._translator.tr_key(mapping[field])
 
     def _render(self) -> None:
         """Redraw using the latest BJH table."""

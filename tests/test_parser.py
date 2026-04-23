@@ -14,6 +14,7 @@ from n2_param.core.parsing.asap_report_parser import (
     _ANALYSIS_LOG_LINE,
     _DATA_ROW_RE,
 )
+from n2_param.gui.chart_series import bjh_dVdD_cc_g_nm
 
 _SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
 
@@ -73,6 +74,19 @@ def test_c_zn_ahc_394_merges_analysis_log_across_pages() -> None:
     assert legacy_first_only > 0
     assert len(report.analysis_log) > legacy_first_only
     assert len(report.analysis_log) == 47
+
+
+def test_bjh_dVdD_formulasample_row() -> None:
+    """dV/dD = (A * 10) / (B - C) with A incremental volume, C_min–B_max from range (Å)."""
+    path = _SAMPLES_DIR / "C-Zn-AHC-Am.392"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    report = AsapReportParser().parse(text)
+    assert len(report.bjh_desorption_rows) >= 2
+    row1 = report.bjh_desorption_rows[1]
+    a = 0.009009
+    b_minus_c = 441.8 - 394.6
+    expect = a * 10.0 / b_minus_c
+    assert bjh_dVdD_cc_g_nm(row1) == pytest.approx(expect, rel=1e-5)
 
 
 def test_cs_zn_naoh_numeric_snapshot() -> None:

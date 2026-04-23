@@ -14,7 +14,7 @@ tab.chart_bjh,BJH desorption,BJH десорбция,BJH 脱附
 tab.statistics,Statistics,Статистика,统计
 tab.raw,Raw text,Текст файла,原始文本
 chart.analysis_log.title,Adsorbed volume vs. relative pressure,Объём адсорбции в зависимости от относительного давления,吸附体积随相对压力
-chart.bjh.title,BJH desorption pore distribution,Распределение пор BJH (десорбция),BJH 脱附孔分布
+chart.bjh.title,"BJH desorption — dV/dD vs. pore diameter",BJH (десорбция) — dV/dD от размера пор,BJH 脱附 dV/dD
 stats.placeholder,Statistics will be defined in stage 2.,Содержимое вкладки будет задано на этапе 2.,统计内容将在阶段 2 中定义。
 raw.allow_edit,Allow editing,Разрешить редактирование,允许编辑
 raw.save,Save,Сохранить,保存
@@ -30,6 +30,8 @@ axis.incr_area,Incremental pore area (m²/g),Инкрементальная пл
 axis.cum_area,Cumulative pore area (m²/g),Кумулятивная площадь пор (м²/г),累计孔面积（m²/g）
 axis.incr_vol,Incremental pore volume (cc/g),Инкрементальный объём пор (см³/г),增量孔体积（cc/g）
 axis.cum_vol,Cumulative pore volume (cc/g),Кумулятивный объём пор (см³/г),累计孔体积（cc/g）
+axis.pore_diameter_nm,"Pore diameter, D (nm)",«Диаметр пор, D (нм)»,孔径 D（nm）
+axis.dV_dD,"dV/dD (cm³·g⁻¹·nm⁻¹)",«dV/dD, см³·г⁻¹·нм⁻¹»,dV/dD（cm³·g⁻¹·nm⁻¹）
 figure_options.dialog_title,Figure options,Параметры рисунка,图窗选项
 figure_options.error_title,Error,Ошибка,错误
 figure_options.error_no_axes,There are no Axes to edit.,Нет осей для редактирования.,没有可编辑的坐标轴

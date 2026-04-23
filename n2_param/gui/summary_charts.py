@@ -228,7 +228,7 @@ class MultiAnalysisLogChartWidget(QWidget):
 
 
 class MultiBjhChartWidget(QWidget):
-    """BJH multi-file chart with incremental appearance updates."""
+    """BJH dV/dD vs. D (nm) overlay: one line per file."""
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         """
@@ -319,6 +319,8 @@ class MultiBjhChartWidget(QWidget):
     def _axis_label(self, field: BJHSeries) -> str:
         """Translate BJH axis label for a column."""
         mapping: dict[BJHSeries, str] = {
+            "pore_diameter_avg_nm": "axis.pore_diameter_nm",
+            "dV_dD_cc_g_nm": "axis.dV_dD",
             "average_diameter_a": "axis.avg_diameter",
             "incremental_pore_volume_cc_g": "axis.incr_vol",
             "cumulative_pore_volume_cc_g": "axis.cum_vol",

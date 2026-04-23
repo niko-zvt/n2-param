@@ -16,6 +16,8 @@ AnalysisLogField = Literal[
 ]
 
 BJHSeries = Literal[
+    "pore_diameter_avg_nm",
+    "dV_dD_cc_g_nm",
     "average_diameter_a",
     "incremental_pore_volume_cc_g",
     "cumulative_pore_volume_cc_g",
@@ -26,5 +28,6 @@ BJHSeries = Literal[
 X_ANALYSIS_LOG_PLOT_DEFAULT: AnalysisLogField = "relative_pressure"
 Y_ANALYSIS_LOG_PLOT_DEFAULT: AnalysisLogField = "vol_adsorbed_cc_g_stp"
 
-XBJH_DEFAULT: BJHSeries = "incremental_pore_area_sq_m_g"
-YBJH_DEFAULT: BJHSeries = "average_diameter_a"
+# BJH: X = average diameter (nm), Y = dV/dD in cm³·g⁻¹·nm⁻¹; see chart_series.bjh_series.
+XBJH_DEFAULT: BJHSeries = "pore_diameter_avg_nm"
+YBJH_DEFAULT: BJHSeries = "dV_dD_cc_g_nm"
