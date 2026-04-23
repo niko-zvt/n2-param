@@ -153,6 +153,19 @@ class SummaryTabPage(QWidget):
         QTimer.singleShot(0, self._tune_left_panel_to_content)
         QTimer.singleShot(50, self._tune_left_panel_to_content)
 
+    def checked_sessions_in_list_order(self) -> list[OpenFileSession]:
+        """
+        Return only sessions with the row checkbox ticked, in the same order as the Summary file list.
+        """
+        if not self._sessions:
+            return []
+        out: list[OpenFileSession] = []
+        for s in self._sessions:
+            row = self._path_rows.get(s.path)
+            if row is not None and row.check.isChecked():
+                out.append(s)
+        return out
+
     def set_sessions(self, sessions: Sequence[OpenFileSession]) -> None:
         """
         Rebuild the file list and point multi-series charts at the same sessions and colors.

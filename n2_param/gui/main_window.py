@@ -5,11 +5,13 @@ Primary application window with menus, drag-and-drop, and nested tabs.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSettings, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QLabel,
     QMainWindow,
@@ -22,7 +24,18 @@ from PySide6.QtWidgets import (
 )
 
 from n2_param.core.parsing.asap_report_parser import AsapReportParser
+from n2_param.export.sheet_export import (
+    build_sheet_rows,
+    export_parsed_to_file,
+    merge_sheet_blocks,
+    write_csv,
+    write_xlsx,
+)
 from n2_param.gui.dialogs.about_dialog import AboutDialog
+from n2_param.gui.dialogs.filename_template_dialog import (
+    FilenameTemplateDialog,
+    SAMPLE_NAME_PLACEHOLDER,
+)
 from n2_param.gui.file_session import OpenFileSession
 from n2_param.gui.file_tab_page import FileTabPage
 from n2_param.gui.summary_tab_page import SummaryTabPage
@@ -36,7 +49,9 @@ class MainWindow(QMainWindow):
     """Hosts multi-file tabs and wires global actions."""
 
     _SETTING_LAST_OPEN_DIR: str = "file/last_open_directory"
+    _SETTING_LAST_EXPORT_DIR: str = "file/last_export_directory"
     _SETTING_WINDOW_GEOMETRY: str = "window/geometry"
+    _UNSAFE_STEM: re.Pattern[str] = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create menus, central tabs, and localization bindings."""
@@ -75,6 +90,9 @@ class MainWindow(QMainWindow):
         open_action.setShortcut(QKeySequence.Open)
         open_action.triggered.connect(self._choose_files)
         file_menu.addAction(open_action)
+        export_action = QAction("", self)
+        export_action.triggered.connect(self._on_export)
+        file_menu.addAction(export_action)
 
         quit_action = QAction("", self)
         quit_action.setShortcut(QKeySequence.Quit)
@@ -105,6 +123,7 @@ class MainWindow(QMainWindow):
         self._menu_language = language_menu
         self._menu_help = help_menu
         self._action_open = open_action
+        self._action_export = export_action
         self._action_quit = quit_action
         self._action_about = about_action
 
@@ -117,6 +136,7 @@ class MainWindow(QMainWindow):
         tool_bar.setMovable(False)
         tool_bar.setFloatable(False)
         tool_bar.addAction(self._action_open)
+        tool_bar.addAction(self._action_export)
         self.addToolBar(tool_bar)
 
     def _file_dialog_start_directory(self) -> str:
@@ -262,6 +282,7 @@ class MainWindow(QMainWindow):
         self._menu_language.setTitle(tr("menu.language"))
         self._menu_help.setTitle(tr("menu.help"))
         self._action_open.setText(tr("menu.file.open"))
+        self._action_export.setText(tr("menu.file.export"))
         self._action_quit.setText(tr("menu.file.exit"))
         self._action_about.setText(tr("menu.help.about"))
         self._hint.setText(tr("drop.hint"))
@@ -393,6 +414,199 @@ class MainWindow(QMainWindow):
             self._open_paths.discard(s.path)
         self._file_tabs.removeTab(index)
         self._sync_summary_tab()
+
+    @staticmethod
+    def _safe_export_stem(name: str) -> str:
+        """
+        Return a file stem safe for the host filesystem (strip unsafe characters, limit length).
+        """
+        st = (name or "").strip() or "export"
+        st = MainWindow._UNSAFE_STEM.sub("_", st)
+        st = st.strip(" .")
+        if not st:
+            st = "export"
+        if len(st) > 200:
+            st = st[:200]
+        return st
+
+    @staticmethod
+    def _stem_from_name_pattern(pattern: str, display_name: str, index1: int) -> str:
+        """
+        From the user pattern, either replace the ``{sample_name}`` token or add ``_index`` to a static base.
+        """
+        p = (pattern or "").strip()
+        if SAMPLE_NAME_PLACEHOLDER in p:
+            return MainWindow._safe_export_stem(p.replace(SAMPLE_NAME_PLACEHOLDER, display_name or "sample"))
+        base = p if p else "export"
+        return MainWindow._safe_export_stem(f"{base}_{index1}")
+
+    def _export_dir_start(self) -> Path:
+        """
+        Return the last export directory, else the import directory, else the home directory.
+        """
+        store = QSettings()
+        store.sync()
+        raw = store.value(self._SETTING_LAST_EXPORT_DIR, "", type=str)
+        if isinstance(raw, str) and raw.strip():
+            try:
+                d = Path(raw).expanduser().resolve(strict=False)
+            except (OSError, ValueError) as exc:
+                logger.debug("Invalid stored export directory %r: %s", raw, exc)
+            else:
+                if d.is_dir():
+                    return d
+        open_ = self._file_dialog_start_directory()
+        if isinstance(open_, str) and open_.strip():
+            try:
+                p = Path(open_).expanduser().resolve(strict=False)
+            except (OSError, ValueError) as exc:
+                logger.debug("Open dir for export default: %s", exc)
+            else:
+                if p.is_dir():
+                    return p
+        return Path.home()
+
+    def _remember_export_dir(self, file_path: Path) -> None:
+        """
+        Persist the parent of ``file_path`` as the next default export location.
+        """
+        if not isinstance(file_path, Path):
+            raise TypeError("file_path must be pathlib.Path")
+        try:
+            par = file_path.expanduser().resolve(strict=False).parent
+        except (OSError, ValueError) as exc:
+            logger.debug("Not persisting export directory: %s", exc)
+            return
+        if not par.is_dir():
+            return
+        store = QSettings()
+        store.setValue(self._SETTING_LAST_EXPORT_DIR, str(par))
+        store.sync()
+
+    def _ask_export_save_path(self, default_filename: str) -> Path | None:
+        """
+        Show a native save dialog; default to ``.xlsx`` filter. Returns None if cancelled.
+        """
+        if not isinstance(default_filename, str):
+            raise TypeError("default_filename must be str")
+        trk = self._translator.tr_key
+        start = self._export_dir_start() / default_filename
+        f_xlsx = trk("export.filter_xlsx")
+        f_csv = trk("export.filter_csv")
+        both = f"{f_xlsx};;{f_csv}"
+        out, used = QFileDialog.getSaveFileName(
+            self, trk("menu.file.export"), str(start), both, f_xlsx
+        )
+        if not out:
+            return None
+        p = Path(out)
+        u = (used or "").lower()
+        if p.suffix.lower() not in (".csv", ".xlsx"):
+            if "csv" in u and "xlsx" not in u:
+                p = p.with_suffix(".csv")
+            else:
+                p = p.with_suffix(".xlsx")
+        self._remember_export_dir(p)
+        return p
+
+    def _export_session_to_path(self, session: OpenFileSession, path: Path) -> None:
+        """
+        Run the single-file sheet export, showing an error message on failure.
+        """
+        if not isinstance(session, OpenFileSession):
+            raise TypeError("session must be OpenFileSession")
+        if not isinstance(path, Path):
+            raise TypeError("path must be pathlib.Path")
+        tr = self._translator.tr_key
+        try:
+            export_parsed_to_file(
+                path,
+                session.parsed,
+                session.display_title(),
+                tr,
+            )
+        except (OSError, ValueError) as exc:
+            logger.exception("Export failed for %s", path)
+            QMessageBox.critical(self, tr("menu.file"), f"{tr('export.save_failed')}\n{exc!s}")
+
+    def _on_export(self) -> None:
+        """
+        Start export from the active tab: one file, Summary batch, or nothing to do.
+        """
+        tr = self._translator.tr_key
+        w = self._file_tabs.currentWidget()
+        if w is None:
+            QMessageBox.information(self, tr("menu.file"), tr("export.no_session"))
+            return
+        if isinstance(w, FileTabPage):
+            self._ask_export_file_tab(w.session)
+            return
+        if isinstance(w, SummaryTabPage) and self._summary_page is not None:
+            self._export_from_summary()
+            return
+        QMessageBox.information(self, tr("menu.file"), tr("export.no_session"))
+
+    def _ask_export_file_tab(self, session: OpenFileSession) -> None:
+        """Export from a single per-file tab (full save dialog, default XLSX)."""
+        trk = self._translator.tr_key
+        path = self._ask_export_save_path(trk("export.default_filename"))
+        if path is None:
+            return
+        self._export_session_to_path(session, path)
+
+    def _export_merged_sessions(self, sessions: list[OpenFileSession]) -> None:
+        """Build a horizontally merged table and ask for a single path."""
+        if not sessions:
+            return
+        tr = self._translator.tr_key
+        blocks: list[list[list[str]]] = [build_sheet_rows(s.display_title(), s.parsed, tr) for s in sessions]
+        matrix = merge_sheet_blocks(blocks, gap_columns=2)
+        path = self._ask_export_save_path(tr("export.default_filename"))
+        if path is None:
+            return
+        try:
+            if path.suffix.lower() == ".csv":
+                write_csv(path, matrix)
+            else:
+                write_xlsx(path, matrix)
+        except (OSError, ValueError) as exc:
+            logger.exception("Merged export failed")
+            QMessageBox.critical(self, tr("menu.file"), f"{tr('export.save_failed')}\n{exc!s}")
+
+    def _export_from_summary(self) -> None:
+        """From Summary, ask one vs many file(s), only checked sessions are exported."""
+        if self._summary_page is None:
+            return
+        tr = self._translator.tr_key
+        sessions = self._summary_page.checked_sessions_in_list_order()
+        if not sessions:
+            QMessageBox.information(self, tr("menu.file"), tr("export.no_checked_files"))
+            return
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(tr("menu.file.export"))
+        box.setText(tr("export.summary_choose_mode"))
+        b_one = box.addButton(tr("export.to_one_file"), QMessageBox.ButtonRole.YesRole)
+        b_many = box.addButton(tr("export.to_many_files"), QMessageBox.ButtonRole.ActionRole)
+        b_cancel = box.addButton(tr("export.cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(b_one)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is None or clicked == b_cancel:
+            return
+        if clicked == b_one:
+            self._export_merged_sessions(sessions)
+        elif clicked == b_many:
+            d = FilenameTemplateDialog(self._translator, self)
+            if d.exec() != int(QDialog.DialogCode.Accepted):
+                return
+            pattern = d.pattern.strip() if d.pattern.strip() else tr("export.name_template_default")
+            for index1, s in enumerate(sessions, start=1):
+                stem = self._stem_from_name_pattern(pattern, s.display_title(), index1)
+                path = self._ask_export_save_path(f"{stem}.xlsx")
+                if path is None:
+                    return
+                self._export_session_to_path(s, path)
 
     def _show_about(self) -> None:
         """Present developer information."""
