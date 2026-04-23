@@ -2,13 +2,13 @@ key,en,ru,cn
 tab.summary,Summary,Сводка,汇总
 summary.file_list_title,Files,Файлы,文件
 menu.file,File,Файл,文件
-menu.file.open,Open...,Открыть...,打开…
+menu.file.open,Import...,Импорт…,导入…
 menu.file.exit,Exit,Выход,退出
 menu.language,Language,Язык,语言
 menu.help,Help,Справка,帮助
 menu.help.about,About...,О программе...,关于…
 window.title,n2-param — ASAP reports,n2-param — отчёты ASAP,n2-param — ASAP 报告
-drop.hint,"Drop ASAP text files here, use the Open button on the toolbar, or File → Open",Перетащите файлы сюда или нажмите «Открыть» на панели (меню «Файл → Открыть…»),将 ASAP 文本文件拖放至此，或单击工具栏/菜单中的「打开…」
+drop.hint,"Drop ASAP text files here, use the Import button on the toolbar, or File → Import",Перетащите файлы сюда или нажмите «Импорт…» на панели (меню «Файл → Импорт…»),将 ASAP 文本文件拖放至此，或单击工具栏/菜单中的「导入…」
 tab.chart_isotherm,Isotherm,Изотерма,等温线
 tab.chart_bjh,BJH desorption,BJH десорбция,BJH 脱附
 tab.statistics,Statistics,Статистика,统计

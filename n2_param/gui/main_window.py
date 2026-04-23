@@ -95,6 +95,9 @@ class MainWindow(QMainWindow):
 
         help_menu = menu_bar.addMenu("")
         about_action = QAction("", self)
+        # Keep «About» in the Help menu: default TextHeuristicRole moves it to the app
+        # menu on macOS and can leave Help empty and hidden.
+        about_action.setMenuRole(QAction.MenuRole.NoRole)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
