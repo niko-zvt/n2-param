@@ -32,15 +32,15 @@ def default_view_descriptors() -> tuple[ViewDescriptor, ...]:
         Tuple ordered as presented to the user.
     """
     from n2_param.gui.widgets.bjh_chart import BjhChartWidget
-    from n2_param.gui.widgets.isotherm_chart import IsothermChartWidget
+    from n2_param.gui.widgets.analysis_log_chart import AnalysisLogChartWidget
     from n2_param.gui.widgets.raw_text import RawTextWidget
     from n2_param.gui.widgets.statistics import StatisticsWidget
 
     return (
         ViewDescriptor(
-            view_id="chart_isotherm",
-            title_key="tab.chart_isotherm",
-            factory=lambda session, translator: IsothermChartWidget(session, translator),
+            view_id="chart_pp0_vs_vol",
+            title_key="tab.chart_pp0_vs_vol",
+            factory=lambda session, translator: AnalysisLogChartWidget(session, translator),
         ),
         ViewDescriptor(
             view_id="chart_bjh",

@@ -7,10 +7,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from n2_param.core.models import AnalysisLogRow, BJHDesorptionRow
-from n2_param.gui.chart_config import BJHSeries, IsothermSeries
+from n2_param.gui.chart_config import AnalysisLogField, BJHSeries
 
 
-def analysis_series(rows: Sequence[AnalysisLogRow], field: IsothermSeries) -> list[float]:
+def analysis_series(rows: Sequence[AnalysisLogRow], field: AnalysisLogField) -> list[float]:
     """
     Extract one column from the analysis log as floats.
 
@@ -33,7 +33,7 @@ def analysis_series(rows: Sequence[AnalysisLogRow], field: IsothermSeries) -> li
         elif field == "vol_adsorbed_cc_g_stp":
             result.append(row.vol_adsorbed_cc_g_stp)
         else:
-            raise ValueError(f"unknown isotherm field: {field}")
+            raise ValueError(f"unknown ANALYSIS LOG plot field: {field}")
     return result
 
 

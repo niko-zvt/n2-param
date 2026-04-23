@@ -9,11 +9,11 @@ menu.help,Help,Справка,帮助
 menu.help.about,About...,О программе...,关于…
 window.title,n2-param — ASAP reports,n2-param — отчёты ASAP,n2-param — ASAP 报告
 drop.hint,"Drop ASAP text files here, use the Import button on the toolbar, or File → Import",Перетащите файлы сюда или нажмите «Импорт…» на панели (меню «Файл → Импорт…»),将 ASAP 文本文件拖放至此，或单击工具栏/菜单中的「导入…」
-tab.chart_isotherm,Isotherm,Изотерма,等温线
+tab.chart_pp0_vs_vol,"P/p₀ vs. Adsorption volume",«P/p₀ — Объем адсорбции»,p/p0–吸附体积
 tab.chart_bjh,BJH desorption,BJH десорбция,BJH 脱附
 tab.statistics,Statistics,Статистика,统计
 tab.raw,Raw text,Текст файла,原始文本
-chart.isotherm.title,Isotherm (first ANALYSIS LOG),Изотерма (первый ANALYSIS LOG),等温线（首个 ANALYSIS LOG）
+chart.analysis_log.title,"Relative pressure as a function of adsorbed volume",Относительное давление как функция объёма адсорбции,相对压力与吸附体积的关系
 chart.bjh.title,BJH desorption pore distribution,Распределение пор BJH (десорбция),BJH 脱附孔分布
 stats.placeholder,Statistics will be defined in stage 2.,Содержимое вкладки будет задано на этапе 2.,统计内容将在阶段 2 中定义。
 raw.allow_edit,Allow editing,Разрешить редактирование,允许编辑

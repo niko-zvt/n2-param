@@ -1,5 +1,5 @@
 """
-Matplotlib isotherm view driven by the first ANALYSIS LOG block.
+Matplotlib P/p₀ vs. adsorbed volume from the first ANALYSIS LOG block (per-file view).
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from matplotlib.figure import Figure
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from n2_param.gui.chart_config import (
-    IsothermSeries,
-    XISOTHERM_DEFAULT,
-    YISOTHERM_DEFAULT,
+    AnalysisLogField,
+    X_ANALYSIS_LOG_PLOT_DEFAULT,
+    Y_ANALYSIS_LOG_PLOT_DEFAULT,
 )
 from n2_param.gui.chart_series import analysis_series
 from n2_param.gui.mpl_navigation_toolbar import N2ParamNavigationToolbar2QT
@@ -24,8 +24,8 @@ from n2_param.i18n.translator import Translator
 logger = logging.getLogger(__name__)
 
 
-class IsothermChartWidget(QWidget):
-    """Interactive line plot with zoom/pan toolbar."""
+class AnalysisLogChartWidget(QWidget):
+    """P/p₀–V_ads line plot (ANALYSIS LOG) with navigation toolbar."""
 
     def __init__(self, session: OpenFileSession, translator: Translator, parent: QWidget | None = None) -> None:
         """
@@ -39,8 +39,8 @@ class IsothermChartWidget(QWidget):
         super().__init__(parent)
         self._session = session
         self._translator = translator
-        self._x_field: IsothermSeries = XISOTHERM_DEFAULT
-        self._y_field: IsothermSeries = YISOTHERM_DEFAULT
+        self._x_field: AnalysisLogField = X_ANALYSIS_LOG_PLOT_DEFAULT
+        self._y_field: AnalysisLogField = Y_ANALYSIS_LOG_PLOT_DEFAULT
 
         layout = QVBoxLayout(self)
         self._hint = QLabel("", self)
@@ -62,9 +62,9 @@ class IsothermChartWidget(QWidget):
         translator.locale_changed.connect(self._render)
         self._render()
 
-    def _axis_label(self, field: IsothermSeries) -> str:
-        """Translate axis titles based on selected series."""
-        mapping = {
+    def _axis_label(self, field: AnalysisLogField) -> str:
+        """Translate axis titles for each ANALYSIS LOG column."""
+        mapping: dict[AnalysisLogField, str] = {
             "relative_pressure": "axis.relative_pressure",
             "pressure_mmhg": "axis.pressure_mmhg",
             "vol_adsorbed_cc_g_stp": "axis.vol_adsorbed",
@@ -77,19 +77,19 @@ class IsothermChartWidget(QWidget):
         self._axes.clear()
         report = self._session.parsed
         rows = report.analysis_log
-        title = self._translator.tr_key("chart.isotherm.title")
+        title = self._translator.tr_key("chart.analysis_log.title")
         self._axes.set_title(title)
         if not rows:
             self._hint.setText("")
             self._canvas.draw_idle()
-            logger.info("Isotherm chart skipped: no ANALYSIS LOG rows")
+            logger.info("ANALYSIS LOG P/p₀ plot skipped: no rows")
             return
 
         try:
             xs = analysis_series(rows, self._x_field)
             ys = analysis_series(rows, self._y_field)
         except ValueError:
-            logger.exception("Failed to extract isotherm series")
+            logger.exception("Failed to extract ANALYSIS LOG plot series")
             self._hint.setText("")
             self._canvas.draw_idle()
             return

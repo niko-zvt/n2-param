@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-IsothermSeries = Literal[
+# Columns (ANALYSIS LOG) for the P/p₀ vs. adsorbed volume pair plot.
+AnalysisLogField = Literal[
     "relative_pressure",
     "pressure_mmhg",
     "vol_adsorbed_cc_g_stp",
@@ -22,8 +23,8 @@ BJHSeries = Literal[
     "cumulative_pore_area_sq_m_g",
 ]
 
-XISOTHERM_DEFAULT: IsothermSeries = "vol_adsorbed_cc_g_stp"
-YISOTHERM_DEFAULT: IsothermSeries = "relative_pressure"
+X_ANALYSIS_LOG_PLOT_DEFAULT: AnalysisLogField = "vol_adsorbed_cc_g_stp"
+Y_ANALYSIS_LOG_PLOT_DEFAULT: AnalysisLogField = "relative_pressure"
 
 XBJH_DEFAULT: BJHSeries = "incremental_pore_area_sq_m_g"
 YBJH_DEFAULT: BJHSeries = "average_diameter_a"

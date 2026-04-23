@@ -27,7 +27,11 @@ from PySide6.QtWidgets import (
 )
 
 from n2_param.gui.file_session import OpenFileSession
-from n2_param.gui.summary_charts import DEFAULT_CURVE_COLORS, MultiBjhChartWidget, MultiIsothermChartWidget
+from n2_param.gui.summary_charts import (
+    DEFAULT_CURVE_COLORS,
+    MultiAnalysisLogChartWidget,
+    MultiBjhChartWidget,
+)
 from n2_param.i18n.translator import Translator
 
 logger = logging.getLogger(__name__)
@@ -72,7 +76,7 @@ class _SummaryRow:
 
 class SummaryTabPage(QWidget):
     """
-    First tab: inner chart isotherm/BJH and a left file list (check, color swatch, name).
+    First tab: inner ANALYSIS LOG P/p₀–V and BJH charts, plus a left file list (check, color, name).
     """
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
@@ -127,11 +131,11 @@ class SummaryTabPage(QWidget):
         self._splitter.setStretchFactor(1, 1)
 
         self._inner = QTabWidget(self)
-        self._iso = MultiIsothermChartWidget(translator, parent=self)
+        self._chart_pp0 = MultiAnalysisLogChartWidget(translator, parent=self)
         self._bjh = MultiBjhChartWidget(translator, parent=self)
         self._inner.addTab(
-            self._iso,
-            translator.tr_key("tab.chart_isotherm"),
+            self._chart_pp0,
+            translator.tr_key("tab.chart_pp0_vs_vol"),
         )
         self._inner.addTab(
             self._bjh,
@@ -190,7 +194,7 @@ class SummaryTabPage(QWidget):
 
         v = self._is_file_visible
         g = self._color_for_path
-        self._iso.set_sessions(self._sessions, v, g)
+        self._chart_pp0.set_sessions(self._sessions, v, g)
         self._bjh.set_sessions(self._sessions, v, g)
         QTimer.singleShot(0, self._tune_left_panel_to_content)
 
@@ -311,7 +315,7 @@ class SummaryTabPage(QWidget):
 
     def _on_appearance_changed(self) -> None:
         """Reapply visibility and colors; Multi* keep axis limits in ``apply_appearance``."""
-        self._iso.apply_appearance()
+        self._chart_pp0.apply_appearance()
         self._bjh.apply_appearance()
 
     def _choose_path_color(self, path: Path, color_btn: QToolButton) -> None:
@@ -327,7 +331,7 @@ class SummaryTabPage(QWidget):
             return
         self._path_colors[path] = hex_
         _apply_color_to_swatch_button(color_btn, hex_, _SWATCH_W, _SWATCH_H)
-        self._iso.apply_appearance()
+        self._chart_pp0.apply_appearance()
         self._bjh.apply_appearance()
 
     def _color_for_path(self, path: Path) -> str:
@@ -375,11 +379,11 @@ class SummaryTabPage(QWidget):
         Re-translate the Summary group title and inner tab names.
 
         Chart text is updated by the shared ``Translator.locale_changed`` signal
-        (already connected inside ``MultiIsothermChartWidget`` / ``MultiBjhChartWidget``).
+        (already connected inside ``MultiAnalysisLogChartWidget`` / ``MultiBjhChartWidget``).
         """
         _ = _language
         self._update_file_group_title()
-        self._inner.setTabText(0, self._translator.tr_key("tab.chart_isotherm"))
+        self._inner.setTabText(0, self._translator.tr_key("tab.chart_pp0_vs_vol"))
         self._inner.setTabText(1, self._translator.tr_key("tab.chart_bjh"))
 
     def _update_file_group_title(self) -> None:

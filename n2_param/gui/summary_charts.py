@@ -17,7 +17,14 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from n2_param.gui.chart_config import BJHSeries, IsothermSeries, XBJH_DEFAULT, XISOTHERM_DEFAULT, YBJH_DEFAULT, YISOTHERM_DEFAULT
+from n2_param.gui.chart_config import (
+    AnalysisLogField,
+    BJHSeries,
+    XBJH_DEFAULT,
+    X_ANALYSIS_LOG_PLOT_DEFAULT,
+    YBJH_DEFAULT,
+    Y_ANALYSIS_LOG_PLOT_DEFAULT,
+)
 from n2_param.gui.chart_series import analysis_series, bjh_series
 from n2_param.gui.file_session import OpenFileSession
 from n2_param.gui.mpl_navigation_toolbar import N2ParamNavigationToolbar2QT
@@ -81,12 +88,12 @@ def _curve_gid_for_path(path: Path) -> str:
     return f"n2_param:summary:curve:{path.as_posix()}"
 
 
-class MultiIsothermChartWidget(QWidget):
-    """Isotherm chart showing one line per file; visibility and color are incremental updates."""
+class MultiAnalysisLogChartWidget(QWidget):
+    """P/p₀ vs. adsorbed volume: one line per file; visibility and color are incremental updates."""
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         """
-        Build the isotherm shell, axes, and resize binding.
+        Build the ANALYSIS LOG P–V plot shell, axes, and resize binding.
 
         Args:
             translator: Localized axis and title strings.
@@ -94,8 +101,8 @@ class MultiIsothermChartWidget(QWidget):
         """
         super().__init__(parent)
         self._translator = translator
-        self._x_field: IsothermSeries = XISOTHERM_DEFAULT
-        self._y_field: IsothermSeries = YISOTHERM_DEFAULT
+        self._x_field: AnalysisLogField = X_ANALYSIS_LOG_PLOT_DEFAULT
+        self._y_field: AnalysisLogField = Y_ANALYSIS_LOG_PLOT_DEFAULT
         self._sessions: tuple[OpenFileSession, ...] = ()
         self._lines: dict[Path, Line2D] = {}
         self._visible: Callable[[Path], bool] = lambda _p: True
@@ -139,7 +146,7 @@ class MultiIsothermChartWidget(QWidget):
             try:
                 previous.parsed_changed.disconnect(self._rebuild_plots)
             except TypeError:
-                logger.debug("Isotherm: parsed_changed already detached for %s", previous.path)
+                logger.debug("ANALYSIS LOG plot: parsed_changed already detached for %s", previous.path)
         self._sessions = tuple(sessions)
         self._visible = is_visible
         self._get_color = get_color
@@ -170,9 +177,9 @@ class MultiIsothermChartWidget(QWidget):
         self._axes.set_ylim(y0, y1)
         self._canvas.draw_idle()
 
-    def _axis_label(self, field: IsothermSeries) -> str:
-        """Translate isotherm axis label for a column."""
-        mapping: dict[IsothermSeries, str] = {
+    def _axis_label(self, field: AnalysisLogField) -> str:
+        """Translate axis label for an ANALYSIS LOG column."""
+        mapping: dict[AnalysisLogField, str] = {
             "relative_pressure": "axis.relative_pressure",
             "pressure_mmhg": "axis.pressure_mmhg",
             "vol_adsorbed_cc_g_stp": "axis.vol_adsorbed",
@@ -183,7 +190,7 @@ class MultiIsothermChartWidget(QWidget):
         """Recompute all series: clears axes, used for data changes and after locale change."""
         self._axes.clear()
         self._lines.clear()
-        title = self._translator.tr_key("chart.isotherm.title")
+        title = self._translator.tr_key("chart.analysis_log.title")
         self._axes.set_title(title)
         if not self._sessions:
             self._canvas.draw_idle()
@@ -198,7 +205,7 @@ class MultiIsothermChartWidget(QWidget):
                 xs = analysis_series(rows, self._x_field)
                 ys = analysis_series(rows, self._y_field)
             except ValueError:
-                logger.exception("Multi isotherm: series extraction failed for %s", path)
+                logger.exception("ANALYSIS LOG multi-plot: series extraction failed for %s", path)
                 continue
             c = _safe_color(self._get_color, path)
             lbl = _curve_legend_label(session)
