@@ -50,6 +50,36 @@ def _default_color() -> str:
 _LINE_W: float = 1.2
 
 
+def _curve_legend_label(session: OpenFileSession) -> str:
+    """
+    Human-readable name for a matplotlib line (Sample ID, else file name).
+
+    The Line2D ``label`` is shown in the navigation toolbar, legend, and replaces the
+    default names like ``_line0`` / internal ``_child*``-style labels when not set.
+    """
+    if not isinstance(session, OpenFileSession):
+        raise TypeError("session must be OpenFileSession")
+    t = session.display_title()
+    if isinstance(t, str) and t.strip():
+        return t.strip()
+    return session.path.name
+
+
+def _curve_gid_for_path(path: Path) -> str:
+    """
+    Stable artist id (``Line2D.set_gid``) for the summary overlay for this path.
+
+    Args:
+        path: Absolute path to the open file.
+
+    Returns:
+        A short ASCII identifier safe for pickers and debugging.
+    """
+    if not isinstance(path, Path):
+        raise TypeError("path must be pathlib.Path")
+    return f"n2_param:summary:curve:{path.as_posix()}"
+
+
 class MultiIsothermChartWidget(QWidget):
     """Isotherm chart showing one line per file; visibility and color are incremental updates."""
 
@@ -166,7 +196,16 @@ class MultiIsothermChartWidget(QWidget):
                 logger.exception("Multi isotherm: series extraction failed for %s", path)
                 continue
             c = _safe_color(self._get_color, path)
-            (line,) = self._axes.plot(xs, ys, color=c, linewidth=_LINE_W, visible=self._visible(path))
+            lbl = _curve_legend_label(session)
+            (line,) = self._axes.plot(
+                xs,
+                ys,
+                color=c,
+                linewidth=_LINE_W,
+                visible=self._visible(path),
+                label=lbl,
+            )
+            line.set_gid(_curve_gid_for_path(path))
             self._lines[path] = line
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
@@ -294,13 +333,16 @@ class MultiBjhChartWidget(QWidget):
                 logger.exception("Multi BJH: series extraction failed for %s", path)
                 continue
             c = _safe_color(self._get_color, path)
+            lbl = _curve_legend_label(session)
             (line,) = self._axes.plot(
                 xs,
                 ys,
                 color=c,
                 linewidth=_LINE_W,
                 visible=self._visible(path),
+                label=lbl,
             )
+            line.set_gid(_curve_gid_for_path(path))
             self._lines[path] = line
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
