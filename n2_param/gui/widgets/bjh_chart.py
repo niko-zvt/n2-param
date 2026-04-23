@@ -8,7 +8,7 @@ import logging
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from n2_param.gui.chart_config import (
     BJHSeries,
@@ -45,9 +45,6 @@ class BjhChartWidget(QWidget):
         self._y_field: BJHSeries = YBJH_DEFAULT
 
         layout = QVBoxLayout(self)
-        self._hint = QLabel("", self)
-        layout.addWidget(self._hint)
-
         self._figure = Figure(figsize=(5.5, 4.0), layout="tight")
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._toolbar = N2ParamNavigationToolbar2QT(
@@ -85,7 +82,6 @@ class BjhChartWidget(QWidget):
         title = self._translator.tr_key("chart.bjh.title")
         self._axes.set_title(title)
         if not rows:
-            self._hint.setText("")
             self._canvas.draw_idle()
             logger.info("BJH chart skipped: no rows")
             return
@@ -95,7 +91,6 @@ class BjhChartWidget(QWidget):
             ys = bjh_series(rows, self._y_field)
         except ValueError:
             logger.exception("Failed to extract BJH series")
-            self._hint.setText("")
             self._canvas.draw_idle()
             return
 
@@ -111,5 +106,4 @@ class BjhChartWidget(QWidget):
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
         self._axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-        self._hint.setText("")
         self._canvas.draw_idle()

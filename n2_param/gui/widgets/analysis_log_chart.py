@@ -8,7 +8,7 @@ import logging
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from n2_param.gui.chart_config import (
     AnalysisLogField,
@@ -45,9 +45,6 @@ class AnalysisLogChartWidget(QWidget):
         self._y_field: AnalysisLogField = Y_ANALYSIS_LOG_PLOT_DEFAULT
 
         layout = QVBoxLayout(self)
-        self._hint = QLabel("", self)
-        layout.addWidget(self._hint)
-
         self._figure = Figure(figsize=(5.5, 4.0), layout="tight")
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._toolbar = N2ParamNavigationToolbar2QT(
@@ -82,7 +79,6 @@ class AnalysisLogChartWidget(QWidget):
         title = self._translator.tr_key("chart.analysis_log.title")
         self._axes.set_title(title)
         if not rows:
-            self._hint.setText("")
             self._canvas.draw_idle()
             logger.info("ANALYSIS LOG plot skipped: no rows")
             return
@@ -92,7 +88,6 @@ class AnalysisLogChartWidget(QWidget):
             ys = analysis_series(rows, self._y_field)
         except ValueError:
             logger.exception("Failed to extract ANALYSIS LOG plot series")
-            self._hint.setText("")
             self._canvas.draw_idle()
             return
 
@@ -108,5 +103,4 @@ class AnalysisLogChartWidget(QWidget):
         self._axes.set_xlabel(self._axis_label(self._x_field))
         self._axes.set_ylabel(self._axis_label(self._y_field))
         self._axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-        self._hint.setText("")
         self._canvas.draw_idle()
