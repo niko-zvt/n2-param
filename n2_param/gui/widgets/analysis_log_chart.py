@@ -1,5 +1,5 @@
 """
-Matplotlib P/p₀ vs. adsorbed volume from the first ANALYSIS LOG block (per-file view).
+Matplotlib ANALYSIS LOG block (per file): X = relative pressure (P/p₀), Y = adsorbed volume.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalysisLogChartWidget(QWidget):
-    """P/p₀–V_ads line plot (ANALYSIS LOG) with navigation toolbar."""
+    """V_ads over P/p₀ (ANALYSIS LOG) with navigation toolbar."""
 
     def __init__(self, session: OpenFileSession, translator: Translator, parent: QWidget | None = None) -> None:
         """
@@ -82,7 +82,7 @@ class AnalysisLogChartWidget(QWidget):
         if not rows:
             self._hint.setText("")
             self._canvas.draw_idle()
-            logger.info("ANALYSIS LOG P/p₀ plot skipped: no rows")
+            logger.info("ANALYSIS LOG plot skipped: no rows")
             return
 
         try:

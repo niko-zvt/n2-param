@@ -89,11 +89,11 @@ def _curve_gid_for_path(path: Path) -> str:
 
 
 class MultiAnalysisLogChartWidget(QWidget):
-    """P/p₀ vs. adsorbed volume: one line per file; visibility and color are incremental updates."""
+    """Adsorbed volume vs. P/p₀: one line per file; visibility and color are incremental updates."""
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         """
-        Build the ANALYSIS LOG P–V plot shell, axes, and resize binding.
+        Build the ANALYSIS LOG plot (X: P/p₀, Y: adsorbed volume), axes, and resize binding.
 
         Args:
             translator: Localized axis and title strings.

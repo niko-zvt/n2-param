@@ -76,7 +76,7 @@ class _SummaryRow:
 
 class SummaryTabPage(QWidget):
     """
-    First tab: inner ANALYSIS LOG P/p₀–V and BJH charts, plus a left file list (check, color, name).
+    First tab: inner ANALYSIS LOG (P/p₀ on X, V_ads on Y) and BJH charts, plus a left file list.
     """
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
